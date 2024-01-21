@@ -4,15 +4,16 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"os"
 
 	"golang.org/x/sync/errgroup"
 )
 
-func run(ctx context.Context) error {
+func run(ctx context.Context, l net.Listener) error {
 	// サーバーの組み立て
 	s := &http.Server{
-		Addr: ":18080",
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
 			fmt.Fprintf(w, "Hello, %s!", r.URL.Path[1:])
 		}),
@@ -21,7 +22,7 @@ func run(ctx context.Context) error {
 	// 派生したContextは、Goに渡された関数が最初にnilでないエラーを返すか、Waitが最初に返すか、どちらか先に発生したときにキャンセルされる
 	eg,ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error{
-		if err := s.ListenAndServe(); err != nil && //サーバー起動してエラーチェック
+		if err := s.Serve(l); err != nil && //サーバー起動してエラーチェック
 		err != http.ErrServerClosed {
 			log.Printf("failed to close: %+v",err)
 			return err
@@ -39,7 +40,17 @@ func run(ctx context.Context) error {
 }
 
 func main(){
-	if err := run(context.Background()); err != nil {
+	if len(os.Args) != 2 {
+		log.Printf("need port num\n")
+		os.Exit(1)
+	}
+	p := os.Args[1]
+	l,err := net.Listen("tcp", ":"+p)
+	if err != nil{
+		log.Fatalf("failed to listen port %s : %v",p,err)
+	}
+	if err := run(context.Background(),l); err != nil {
 		log.Printf("failed to terminate server: %v",err)
+		os.Exit(1)
 	}
 }
